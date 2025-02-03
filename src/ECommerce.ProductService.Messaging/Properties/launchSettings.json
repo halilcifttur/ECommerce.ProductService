@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ECommerce.ProductService.Messaging": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}

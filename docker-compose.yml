@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  
+  postgres-api:
+    image: postgres:latest
+    container_name: PostgreSQL-API
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ECommerceDB
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./.containers/postgres-api:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-messaging:
+    image: postgres:latest
+    container_name: PostgreSQL-Messaging
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: MessagingDB
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./.containers/postgres-messaging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    container_name: Redis
+    restart: always
+    ports:
+      - '6379:6379'
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4.0.4-management
+    container_name: RabbitMQ
+    hostname: rabbitmq-queue
+    volumes:
+        - ./.containers/queue/data/:/var/lib/rabbitmq
+        - ./.containers/queue/log/:/var/log/rabbitmq
+    ports:
+        - "5672:5672"
+        - "15672:15672"
+    environment:
+        RABBITMQ_DEFAULT_USER: guest
+        RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+        test: ["CMD", "rabbitmqctl", "status"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+
+  ecommerce.productservice.api:
+    image: ${DOCKER_REGISTRY-}ecommerceproductserviceapi
+    build:
+      context: .
+      dockerfile: src/ECommerce.ProductService.API/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - ASPNETCORE_URLS=http://+:5000
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      postgres-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ecommerce.productservice.messaging:
+    image: ${DOCKER_REGISTRY-}ecommerceproductservicemessaging
+    build:
+      context: .
+      dockerfile: src/ECommerce.ProductService.Messaging/Dockerfile
+    environment:
+    - ASPNETCORE_ENVIRONMENT=Development
+    - RabbitMQ__Host=amqp://rabbitmq-queue:5672
+    - RabbitMQ__Username=guest
+    - RabbitMQ__Password=guest
+    - ConnectionStrings__DefaultConnection=Host=postgres-messaging;Port=5432;Database=MessagingDB;Username=postgres;Password=password
+    depends_on:
+      postgres-messaging:
+        condition: service_healthy
